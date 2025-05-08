@@ -1,0 +1,48 @@
+# Go build artifacts
+*.exe
+*.out
+*.test
+*.log
+*.bak
+*.swp
+*.tmp
+
+# Go bin
+bin/
+build/
+dist/
+storyd
+ronin-quest
+
+# Dependency directories (Go modules)
+vendor/
+
+# Go coverage tool files
+coverage.out
+
+# Logs
+*.log
+
+# IDE and editor settings
+.vscode/
+.idea/
+*.code-workspace
+
+# OS-specific
+.DS_Store
+Thumbs.db
+
+# Docker
+.env
+*.env
+docker-compose.override.yml
+
+# Runtime volumes / DB dumps
+pgdata/
+redisdata/
+
+# OpenAPI generated files (if generated manually)
+api/openapi.gen.*
+
+# Test containers
+test_output/
