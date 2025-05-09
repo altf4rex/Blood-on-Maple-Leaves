@@ -46,3 +46,4 @@ api/openapi.gen.*
 
 # Test containers
 test_output/
+Makefile

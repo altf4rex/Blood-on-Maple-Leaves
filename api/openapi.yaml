@@ -1,0 +1,31 @@
+openapi: 3.0.3
+info:
+  title: Ronin Quest API
+  version: 1.0.0
+paths:
+  /signup:
+    post:
+      summary: Регистрация
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SignupRequest'
+      responses:
+        '200':
+          description: OK
+  /login:
+    post:
+      summary: Вход
+      ...
+components:
+  schemas:
+    SignupRequest:
+      type: object
+      required: [username, password]
+      properties:
+        username:
+          type: string
+        password:
+          type: string
