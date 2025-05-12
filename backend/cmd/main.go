@@ -11,7 +11,6 @@ import (
 	"github.com/redis/go-redis/v9"
 
 	"blood-on-maple-leaves/backend/handlers"
-	"blood-on-maple-leaves/backend/middleware"
 	"blood-on-maple-leaves/backend/repo"
 	"blood-on-maple-leaves/backend/service"
 )
@@ -38,22 +37,29 @@ func main() {
 	r := chi.NewRouter()
 
 	// Инициализируем инфраструктуру
-	db := initPostgres()
-	defer db.Close()
-	rdb := initRedis()
-	defer rdb.Close()
+	// db := initPostgres()
+	// defer db.Close()
+	// rdb := initRedis()
+	// defer rdb.Close()
 
 	// Репозитории (конкретные реализации)
-	playerRepo := repo.NewPlayerRepo(db)
-	tokenRepo := repo.NewTokenRepo(rdb)
+	// playerRepo := repo.NewPlayerRepo(db)
+	// tokenRepo := repo.NewTokenRepo(rdb)
+
+	// сцены
+	sceneRepo := repo.NewSceneRepoFS("./scenes")
+	gameSvc := service.NewGameService(sceneRepo)
+	sceneHandler := handlers.NewSceneHandler(gameSvc)
 
 	// Сервис авторизации
-	authSvc := service.NewAuthService(playerRepo, tokenRepo)
+	// authSvc := service.NewAuthService(playerRepo, tokenRepo)
 
 	// Маршруты
-	r.Post("/signup", handlers.SignupHandler(authSvc))
-	r.Post("/login", handlers.LoginHandler(authSvc))
-	r.With(middleware.AuthMiddleware).Get("/me", handlers.MeHandler(authSvc))
+	// r.Post("/signup", handlers.SignupHandler(authSvc))
+	// r.Post("/login", handlers.LoginHandler(authSvc))
+	// r.With(middleware.AuthMiddleware).Get("/me", handlers.MeHandler(authSvc))
+	r.Get("/scenes/{id}", sceneHandler.GetScene)
+	r.Post("/scenes/{id}/choose", sceneHandler.Choose)
 	r.Get("/healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.Write([]byte("OK"))
 	})

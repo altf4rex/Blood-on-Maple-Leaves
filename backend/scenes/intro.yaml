@@ -1,0 +1,13 @@
+id: intro
+text: "Ты стоишь у ворот разрушенного храма. Осенний ветер играет кленовыми листьями..."
+choices:
+  - id: attack
+    text: "Войти и атаковать врага"
+    next: hallway
+    effects:
+      rage: 1
+  - id: sneak
+    text: "Попробовать проникнуть незаметно"
+    next: backdoor
+    effects:
+      honor: 1
