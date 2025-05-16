@@ -4,91 +4,128 @@ import (
 	"encoding/json"
 	"net/http"
 
+	"blood-on-maple-leaves/backend/middleware"
 	"blood-on-maple-leaves/backend/service"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/google/uuid"
 )
 
-// SceneHandler — HTTP-адаптер для работы со сценами.
-// Инжектит GameService, чтобы handler не работал напрямую с репозиториями.
+// SceneHandler отвечает за HTTP-эндпоинты работы со сценами и прогрессом.
 type SceneHandler struct {
 	GameSvc *service.GameService
 }
 
-// NewSceneHandler — конструктор для SceneHandler.
-// Принимает указатель на GameService и возвращает новый экземпляр handler’а.
+// NewSceneHandler создаёт SceneHandler с внедрённым GameService.
 func NewSceneHandler(gs *service.GameService) *SceneHandler {
-	return &SceneHandler{
-		GameSvc: gs,
-	}
+	return &SceneHandler{GameSvc: gs}
 }
 
 // GetScene обрабатывает GET /scenes/{id}.
-// 1. Считывает параметр sceneID из URL.
-// 2. Вызывает GameService.GetScene для загрузки сцены.
-// 3. При ошибке возвращает 404 Not Found.
-// 4. Иначе код 200 и JSON-ответ со всей структурой domain.Scene.
+// Возвращает JSON вида:
+//
+//	{
+//	  "scene": { ...domain.Scene... },
+//	  "stats": { "honor": X, "rage": Y, "karma": Z }
+//	}
 func (h *SceneHandler) GetScene(w http.ResponseWriter, r *http.Request) {
-	// 1. Извлекаем sceneID из URL: "{id}"
 	sceneID := chi.URLParam(r, "id")
 
-	// 2. Загружаем сцену из репозитория через сервис
+	// Загружаем сцену
 	scene, err := h.GameSvc.GetScene(sceneID)
 	if err != nil {
-		// 3. Если сцена не найдена — 404
-		http.Error(w, err.Error(), http.StatusNotFound)
+		http.Error(w, "scene not found", http.StatusNotFound)
 		return
 	}
 
-	// 4. Успешный ответ: устанавливаем заголовок и код, кодируем в JSON
+	// Получаем playerID из контекста (AuthMiddleware)
+	playerIDstr, ok := r.Context().Value(middleware.ContextUserID).(string)
+	if !ok {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	playerID, err := uuid.Parse(playerIDstr)
+	if err != nil {
+		http.Error(w, "invalid user ID", http.StatusBadRequest)
+		return
+	}
+
+	// Получаем последнее сохранение
+	save, err := h.GameSvc.GetLatestSave(r.Context(), playerID)
+	// Если сохранения нет или ошибка, просто не добавляем stats
+
+	// Формируем ответ
+	resp := map[string]interface{}{"scene": scene}
+	if err == nil {
+		resp["stats"] = map[string]int{
+			"honor": save.Honor,
+			"rage":  save.Rage,
+			"karma": save.Karma,
+		}
+	}
+
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(scene)
+	json.NewEncoder(w).Encode(resp)
 }
 
-// ChooseRequest описывает тело POST-запроса /scenes/{id}/choose
-// В JSON должно быть: { "choice_id": "<ID варианта>" }
+// ChooseRequest описывает входной JSON для POST /scenes/{id}/choose.
 type ChooseRequest struct {
 	ChoiceID string `json:"choice_id"`
 }
 
-// ChooseResponse описывает тело успешного ответа на выбор.
-// Возвращаем ID следующей сцены.
+// ChooseResponse описывает выходной JSON после применения выбора.
 type ChooseResponse struct {
-	NextSceneID string `json:"next_scene_id"`
+	NextSceneID string         `json:"next_scene_id"`
+	Stats       map[string]int `json:"stats"`
 }
 
 // Choose обрабатывает POST /scenes/{id}/choose.
-// 1. Извлекает sceneID из URL.
-// 2. Декодирует JSON-тело запроса в ChooseRequest.
-// 3. Вызывает GameService.Choose для применения выбора.
-// 4. При ошибке возвращает 400 Bad Request или 404 Not Found.
-// 5. Иначе код 200 и JSON-ответ с NextSceneID.
+// Принимает выбор игрока, сохраняет новое состояние и возвращает:
+//
+//	{
+//	  "next_scene_id": "...",
+//	  "stats": { "honor": X, "rage": Y, "karma": Z }
+//	}
 func (h *SceneHandler) Choose(w http.ResponseWriter, r *http.Request) {
-	// 1. Извлекаем sceneID из URL
 	sceneID := chi.URLParam(r, "id")
 
-	// 2. Декодируем тело запроса
+	// Парсим тело запроса
 	var req ChooseRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		// Некорректный JSON → 400 Bad Request
 		http.Error(w, "invalid JSON", http.StatusBadRequest)
 		return
 	}
 	defer r.Body.Close()
 
-	// 3. Применяем выбор через GameService
-	nextID, err := h.GameSvc.Choose(sceneID, req.ChoiceID)
+	// Получаем playerID из контекста
+	playerIDstr, ok := r.Context().Value(middleware.ContextUserID).(string)
+	if !ok {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	playerID, err := uuid.Parse(playerIDstr)
 	if err != nil {
-		// Если сцена не найдена или выбор неверен → 400/404
-		// Здесь можем дифференцировать, но для простоты — 400 Bad Request
+		http.Error(w, "invalid user ID", http.StatusBadRequest)
+		return
+	}
+
+	// Применяем выбор и сохраняем новое состояние
+	nextID, save, err := h.GameSvc.ChooseForPlayer(r.Context(), playerID, sceneID, req.ChoiceID)
+	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
-	// 4. Формируем ответ
-	resp := ChooseResponse{NextSceneID: nextID}
+	// Формируем ответ
+	resp := ChooseResponse{
+		NextSceneID: nextID,
+		Stats: map[string]int{
+			"honor": save.Honor,
+			"rage":  save.Rage,
+			"karma": save.Karma,
+		},
+	}
+
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(resp)
 }
